@@ -9,4 +9,7 @@ wheels/
 # Virtual environments
 .venv
 
+# Vector store data (ChromaDB)
+vector_store/
+
 .env

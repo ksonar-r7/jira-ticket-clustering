@@ -4,6 +4,8 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY requirements-docker.txt .
@@ -15,6 +17,9 @@ RUN pip install --no-cache-dir -r requirements-docker.txt
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
 COPY main.py .
+COPY vector_store.py .
+COPY index_tickets.py .
+COPY static/ ./static/
 
 EXPOSE 8000
 

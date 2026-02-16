@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jira Duplicate Finder</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f7f8fa;
+            color: #1a1a2e;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #0052cc 0%, #0747a6 100%);
+            color: white;
+            padding: 0;
+        }
+        .header-inner {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 20px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header-left { display: flex; align-items: center; gap: 14px; }
+        .header-logo {
+            width: 36px; height: 36px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .header-logo svg { width: 20px; height: 20px; fill: white; }
+        .header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+        .header-right { display: flex; align-items: center; gap: 12px; }
+        .badge {
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(4px);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .health-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #57d9a3;
+            display: inline-block;
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+        .health-dot.offline { background: #ff5630; animation: none; }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Container */
+        .container { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
+
+        /* Search */
+        .search-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            padding: 28px 32px;
+            margin-bottom: 20px;
+        }
+        .search-card h2 {
+            margin-bottom: 4px;
+            font-size: 17px;
+            font-weight: 600;
+        }
+        .search-card p { color: #6b778c; margin-bottom: 18px; font-size: 13px; }
+        .search-row { display: flex; gap: 10px; }
+        .search-row input {
+            flex: 1;
+            padding: 11px 16px;
+            border: 2px solid #e4e7eb;
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            letter-spacing: 0.5px;
+        }
+        .search-row input:focus {
+            border-color: #0052cc;
+            box-shadow: 0 0 0 3px rgba(0,82,204,0.1);
+        }
+        .search-row input::placeholder { color: #b3bac5; font-family: inherit; }
+        .search-row button {
+            padding: 11px 28px;
+            background: #0052cc;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+            letter-spacing: 0.2px;
+        }
+        .search-row button:hover { background: #0065ff; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,82,204,0.3); }
+        .search-row button:active { transform: translateY(0); }
+        .search-row button:disabled { background: #c1c7d0; cursor: not-allowed; transform: none; box-shadow: none; }
+        .options-row {
+            display: flex;
+            gap: 16px;
+            margin-top: 14px;
+            align-items: center;
+        }
+        .options-row label { font-size: 13px; color: #6b778c; display: flex; align-items: center; gap: 6px; }
+        .options-row select {
+            padding: 5px 10px;
+            border: 1px solid #e4e7eb;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #172b4d;
+            background: #f7f8fa;
+            cursor: pointer;
+        }
+
+        /* Results */
+        .results-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            overflow: hidden;
+            animation: slideUp 0.3s ease-out;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .results-header {
+            padding: 14px 24px;
+            border-bottom: 1px solid #f0f1f3;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #fafbfc;
+        }
+        .results-header h3 { font-size: 13px; font-weight: 600; color: #42526e; text-transform: uppercase; letter-spacing: 0.5px; }
+        .source-ticket { font-size: 13px; color: #6b778c; }
+        .source-ticket a { color: #0052cc; text-decoration: none; font-weight: 500; }
+        .source-ticket a:hover { text-decoration: underline; }
+
+        .result-item {
+            padding: 18px 24px;
+            border-bottom: 1px solid #f0f1f3;
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            transition: background 0.15s;
+        }
+        .result-item:hover { background: #f9fafb; }
+        .result-item:last-child { border-bottom: none; }
+
+        .rank {
+            width: 30px; height: 30px;
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 13px;
+            flex-shrink: 0;
+        }
+        .rank-1 { background: #e3fcef; color: #006644; }
+        .rank-2 { background: #deebff; color: #0747a6; }
+        .rank-3 { background: #eae6ff; color: #403294; }
+        .rank-other { background: #f4f5f7; color: #8993a4; }
+
+        .result-content { flex: 1; min-width: 0; }
+        .result-top { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+        .result-key {
+            font-size: 13px;
+            font-weight: 600;
+            color: #0052cc;
+            text-decoration: none;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+        }
+        .result-key:hover { text-decoration: underline; }
+        .result-summary {
+            font-size: 14px;
+            color: #172b4d;
+            line-height: 1.5;
+        }
+        .result-meta {
+            margin-top: 8px;
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            font-size: 12px;
+            color: #6b778c;
+        }
+        .score-container { display: flex; align-items: center; gap: 6px; }
+        .score-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+        .score-high { color: #006644; }
+        .score-mid { color: #ff8b00; }
+        .score-low { color: #bf2600; }
+        .score-bar {
+            width: 72px; height: 5px;
+            background: #ecedf0;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .score-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s ease-out;
+        }
+        .score-fill-high { background: linear-gradient(90deg, #36b37e, #57d9a3); }
+        .score-fill-mid { background: linear-gradient(90deg, #ff8b00, #ffab00); }
+        .score-fill-low { background: linear-gradient(90deg, #de350b, #ff5630); }
+
+        .status-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .status-closed { background: #f0f1f3; color: #5e6c84; }
+        .status-open { background: #deebff; color: #0747a6; }
+        .status-progress { background: #e3fcef; color: #006644; }
+
+        /* States */
+        .state-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            text-align: center;
+            padding: 48px 32px;
+        }
+        .loading-text { color: #6b778c; font-size: 14px; margin-top: 16px; }
+        .spinner {
+            width: 36px; height: 36px;
+            border: 3px solid #ecedf0;
+            border-top-color: #0052cc;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .error-card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            text-align: center;
+            padding: 32px;
+        }
+        .error-card .error-icon {
+            width: 44px; height: 44px;
+            background: #ffebe6;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 14px;
+        }
+        .error-card .error-icon svg { width: 22px; height: 22px; fill: #de350b; }
+        .error-card .error-text { color: #bf2600; font-size: 14px; font-weight: 500; }
+        .error-card .error-detail { color: #6b778c; font-size: 13px; margin-top: 6px; }
+
+        .empty-state p { color: #8993a4; font-size: 14px; }
+        .empty-state .hint { font-size: 12px; color: #b3bac5; margin-top: 8px; }
+
+        /* Keyboard shortcut hint */
+        .kbd {
+            background: #f0f1f3;
+            border: 1px solid #dfe1e6;
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-size: 11px;
+            font-family: inherit;
+            color: #6b778c;
+        }
+
+        .hidden { display: none; }
+
+        /* Theme toggle */
+        .theme-toggle {
+            background: rgba(255,255,255,0.15);
+            border: none;
+            border-radius: 8px;
+            width: 34px; height: 34px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s;
+            padding: 0;
+        }
+        .theme-toggle:hover { background: rgba(255,255,255,0.25); }
+        .theme-toggle svg { width: 18px; height: 18px; fill: white; }
+        .theme-toggle .icon-moon { display: none; }
+        body.dark .theme-toggle .icon-sun { display: none; }
+        body.dark .theme-toggle .icon-moon { display: block; }
+
+        /* Dark theme */
+        body.dark { background: #0d1117; color: #e6edf3; }
+        body.dark .header { background: linear-gradient(135deg, #1a3a6b 0%, #0d2240 100%); }
+        body.dark .search-card,
+        body.dark .state-card { background: #161b22; box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2); }
+        body.dark .search-card h2 { color: #e6edf3; }
+        body.dark .search-card p { color: #8b949e; }
+        body.dark .search-row input { background: #0d1117; border-color: #30363d; color: #e6edf3; }
+        body.dark .search-row input:focus { border-color: #388bfd; box-shadow: 0 0 0 3px rgba(56,139,253,0.15); }
+        body.dark .search-row input::placeholder { color: #484f58; }
+        body.dark .search-row button { background: #238636; }
+        body.dark .search-row button:hover { background: #2ea043; box-shadow: 0 2px 8px rgba(46,160,67,0.3); }
+        body.dark .search-row button:disabled { background: #21262d; color: #484f58; }
+        body.dark .options-row label { color: #8b949e; }
+        body.dark .options-row select { background: #0d1117; border-color: #30363d; color: #e6edf3; }
+        body.dark .results-card { background: #161b22; box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2); }
+        body.dark .results-header { background: #1c2129; border-color: #21262d; }
+        body.dark .results-header h3 { color: #8b949e; }
+        body.dark .source-ticket { color: #8b949e; }
+        body.dark .source-ticket a { color: #58a6ff; }
+        body.dark .result-item { border-color: #21262d; }
+        body.dark .result-item:hover { background: #1c2129; }
+        body.dark .result-key { color: #58a6ff; }
+        body.dark .result-summary { color: #e6edf3; }
+        body.dark .result-meta { color: #8b949e; }
+        body.dark .score-bar { background: #21262d; }
+        body.dark .rank-1 { background: #0d2d1a; color: #3fb950; }
+        body.dark .rank-2 { background: #0d2240; color: #58a6ff; }
+        body.dark .rank-3 { background: #1e1532; color: #bc8cff; }
+        body.dark .rank-other { background: #21262d; color: #8b949e; }
+        body.dark .status-closed { background: #21262d; color: #8b949e; }
+        body.dark .status-open { background: #0d2240; color: #58a6ff; }
+        body.dark .status-progress { background: #0d2d1a; color: #3fb950; }
+        body.dark .loading-text { color: #8b949e; }
+        body.dark .spinner { border-color: #21262d; border-top-color: #58a6ff; }
+        body.dark .error-card { background: #161b22; box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2); }
+        body.dark .error-card .error-icon { background: #3d1a1a; }
+        body.dark .error-card .error-detail { color: #8b949e; }
+        body.dark .empty-state p { color: #8b949e; }
+        body.dark .empty-state .hint { color: #6e7681; }
+        body.dark .kbd { background: #21262d; border-color: #30363d; color: #8b949e; }
+        body.dark .badge { background: rgba(255,255,255,0.1); }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .header-inner { padding: 16px; }
+            .container { padding: 20px 16px; }
+            .search-card { padding: 20px; }
+            .search-row { flex-direction: column; }
+            .search-row button { width: 100%; }
+            .result-item { padding: 14px 16px; }
+            .results-header { padding: 12px 16px; flex-direction: column; gap: 4px; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-inner">
+            <div class="header-left">
+                <div class="header-logo">
+                    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                </div>
+                <h1>Jira Duplicate Finder</h1>
+            </div>
+            <div class="header-right">
+                <span class="badge" id="ticketCount" title="Indexed tickets"></span>
+                <span class="health-dot" id="healthDot" title="Service status"></span>
+                <button class="theme-toggle" id="themeToggle" title="Toggle dark mode" onclick="toggleTheme()">
+                    <svg class="icon-sun" viewBox="0 0 24 24"><path d="M12 18a6 6 0 110-12 6 6 0 010 12zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.515 4.929l1.414-1.414L7.05 5.636 5.636 7.05 3.515 4.93zM16.95 18.364l1.414-1.414 2.121 2.121-1.414 1.414-2.121-2.121zM1 13h3v-2H1v2zm19 0h3v-2h-3v2zM4.929 20.485l-1.414-1.414 2.121-2.121 1.414 1.414-2.121 2.121zM18.364 7.05l-1.414-1.414 2.121-2.121 1.414 1.414L18.364 7.05z"/></svg>
+                    <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="search-card">
+            <h2>Find Similar Tickets</h2>
+            <p>Enter a Jira issue key to search for potential duplicates across all indexed tickets.</p>
+            <div class="search-row">
+                <input type="text" id="ticketInput" placeholder="SI-12345 or paste a Jira link"
+                       autocomplete="off" spellcheck="false">
+                <button id="searchBtn" onclick="search()">Search</button>
+            </div>
+            <div class="options-row">
+                <label>Results
+                    <select id="maxResults">
+                        <option value="3">3</option>
+                        <option value="5" selected>5</option>
+                        <option value="10">10</option>
+                    </select>
+                </label>
+                <span style="font-size:12px;color:#b3bac5">Press <span class="kbd">Enter</span> to search</span>
+            </div>
+        </div>
+
+        <div id="emptyState" class="state-card">
+            <p class="empty-state">
+                <p>Enter a ticket ID above to get started</p>
+                <p class="hint">Searches across summary, description, and comments</p>
+            </p>
+        </div>
+
+        <div id="loading" class="state-card hidden">
+            <div class="spinner"></div>
+            <p class="loading-text">Searching indexed tickets...</p>
+        </div>
+
+        <div id="errorBox" class="error-card hidden">
+            <div class="error-icon">
+                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            </div>
+            <div class="error-text" id="errorText"></div>
+            <div class="error-detail" id="errorDetail"></div>
+        </div>
+
+        <div id="resultsCard" class="results-card hidden">
+            <div class="results-header">
+                <h3 id="resultsTitle"></h3>
+                <span class="source-ticket" id="sourceInfo"></span>
+            </div>
+            <div id="resultsList"></div>
+        </div>
+    </div>
+
+    <script>
+        // Restore saved theme preference
+        if (localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.body.classList.add('dark');
+        }
+
+        function toggleTheme() {
+            document.body.classList.toggle('dark');
+            localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+        }
+
+        const input = document.getElementById('ticketInput');
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
+        input.focus();
+
+        // Check health on load
+        (async function checkHealth() {
+            try {
+                const resp = await fetch('/health');
+                const data = await resp.json();
+                const dot = document.getElementById('healthDot');
+                const count = document.getElementById('ticketCount');
+                if (data.status === 'healthy') {
+                    dot.classList.remove('offline');
+                    dot.title = 'Service healthy';
+                    if (data.indexed_tickets > 0) {
+                        count.textContent = data.indexed_tickets.toLocaleString() + ' tickets';
+                    }
+                } else {
+                    dot.classList.add('offline');
+                    dot.title = 'Service unhealthy';
+                }
+            } catch {
+                document.getElementById('healthDot').classList.add('offline');
+            }
+        })();
+
+        function parseTicketKey(raw) {
+            const s = raw.trim();
+            // Match ticket key from a Jira URL like https://domain.atlassian.net/browse/SI-12345
+            const urlMatch = s.match(/\/browse\/([A-Za-z][A-Za-z0-9]+-\d+)/);
+            if (urlMatch) return urlMatch[1].toUpperCase();
+            // Otherwise treat as a plain ticket key
+            return s.toUpperCase();
+        }
+
+        async function search() {
+            const ticket = parseTicketKey(input.value);
+            if (!ticket) { input.focus(); return; }
+            if (!/^[A-Z][A-Z0-9]+-\d+$/.test(ticket)) {
+                showError('Invalid ticket format', 'Expected format: PROJECT-1234 or a Jira URL (e.g. https://…/browse/SI-12345)');
+                return;
+            }
+            // Normalize the input field to show the extracted key
+            input.value = ticket;
+
+            const maxResults = document.getElementById('maxResults').value;
+            const btn = document.getElementById('searchBtn');
+
+            hide('emptyState'); hide('errorBox'); hide('resultsCard');
+            show('loading');
+            btn.disabled = true;
+            btn.textContent = 'Searching...';
+
+            try {
+                const resp = await fetch(`/api/v1/issues/${ticket}/similar?max_results=${maxResults}`);
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    if (resp.status === 404) {
+                        showError('Ticket not found', `${ticket} does not exist in Jira.`);
+                    } else {
+                        showError('Search failed', err.detail || `Server returned ${resp.status}`);
+                    }
+                    return;
+                }
+                const results = await resp.json();
+                renderResults(ticket, results);
+            } catch (err) {
+                showError('Connection error', err.message);
+            } finally {
+                hide('loading');
+                btn.disabled = false;
+                btn.textContent = 'Search';
+            }
+        }
+
+        function showError(title, detail) {
+            hide('loading');
+            document.getElementById('errorText').textContent = title;
+            document.getElementById('errorDetail').textContent = detail || '';
+            show('errorBox');
+        }
+
+        function renderResults(ticket, results) {
+            const domain = results.length > 0
+                ? results[0].link.replace(`/browse/${results[0].key}`, '')
+                : '';
+
+            document.getElementById('resultsTitle').textContent =
+                `${results.length} match${results.length !== 1 ? 'es' : ''} found`;
+            document.getElementById('sourceInfo').innerHTML =
+                `Source: <a href="${domain}/browse/${ticket}" target="_blank">${ticket}</a>`;
+
+            const list = document.getElementById('resultsList');
+            list.innerHTML = '';
+
+            if (results.length === 0) {
+                list.innerHTML = '<div style="text-align:center;padding:40px;color:#8993a4"><p>No similar tickets found.</p></div>';
+                show('resultsCard');
+                return;
+            }
+
+            results.forEach((r, i) => {
+                const rank = i + 1;
+                const score = parseFloat(r.match_score);
+                const rankClass = rank <= 3 ? `rank-${rank}` : 'rank-other';
+                const statusClass = getStatusClass(r.status);
+                const scoreClass = score >= 70 ? 'high' : score >= 50 ? 'mid' : 'low';
+
+                const item = document.createElement('div');
+                item.className = 'result-item';
+                item.innerHTML = `
+                    <div class="rank ${rankClass}">${rank}</div>
+                    <div class="result-content">
+                        <div class="result-top">
+                            <a class="result-key" href="${r.link}" target="_blank">${r.key}</a>
+                            <span class="status-badge ${statusClass}">${r.status}</span>
+                        </div>
+                        <div class="result-summary">${escapeHtml(r.summary)}</div>
+                        <div class="result-meta">
+                            <div class="score-container">
+                                <span class="score-value score-${scoreClass}">${r.match_score}</span>
+                                <span class="score-bar">
+                                    <span class="score-fill score-fill-${scoreClass}" style="width:${score}%"></span>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+
+            show('resultsCard');
+        }
+
+        function getStatusClass(status) {
+            const s = status.toLowerCase();
+            if (s.includes('close') || s.includes('done') || s.includes('resolve')) return 'status-closed';
+            if (s.includes('progress') || s.includes('review')) return 'status-progress';
+            return 'status-open';
+        }
+
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        function show(id) { document.getElementById(id).classList.remove('hidden'); }
+        function hide(id) { document.getElementById(id).classList.add('hidden'); }
+    </script>
+</body>
+</html>
