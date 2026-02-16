@@ -39,6 +39,7 @@ app = FastAPI(
 
 class SimilarIssueResponse(BaseModel):
     key: str
+    link: str
     summary: str
     status: str
     match_score: str
@@ -130,7 +131,7 @@ class JiraClient:
         }
         try:
             response = requests.post(
-                url, headers=self.headers, json=payload, auth=self.auth, timeout=10
+                url, headers=self.headers, json=payload, auth=self.auth, timeout=20
             )
             response.raise_for_status()
             return response.json().get("issues", [])
@@ -187,6 +188,7 @@ def rank_issues_by_similarity(
         winning_issues.append(
             {
                 "key": matched_issue["key"],
+                "link": f"https://{DOMAIN}/browse/{matched_issue['key']}",
                 "summary": matched_issue["fields"].get("summary", ""),
                 "status": status_name,
                 "match_score": f"{match_percentage}%",
