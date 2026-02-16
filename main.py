@@ -227,7 +227,13 @@ def find_similar_issues(
         )
 
     target_description = parse_jira_description(target_issue.get("description"))
-    target_full_context = f"{target_summary}. {target_description}"
+    target_comments = target_issue.get("comments", "")
+
+    # Build query text matching how tickets are indexed (summary + description + comments)
+    parts = [target_summary, target_description]
+    if target_comments:
+        parts.append(f"Comments: {target_comments}")
+    target_full_context = ". ".join(p for p in parts if p)
 
     if "vector_store" in app_state:
         vector_store = app_state["vector_store"]
@@ -376,7 +382,12 @@ async def jira_webhook(request: Request):
         return {"status": "skipped", "reason": "No summary on ticket"}
 
     target_description = parse_jira_description(target_issue.get("description"))
-    target_full_context = f"{target_summary}. {target_description}"
+    target_comments = target_issue.get("comments", "")
+
+    parts = [target_summary, target_description]
+    if target_comments:
+        parts.append(f"Comments: {target_comments}")
+    target_full_context = ". ".join(p for p in parts if p)
 
     # Find similar tickets
     if "vector_store" not in app_state:

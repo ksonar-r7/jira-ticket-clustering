@@ -183,6 +183,23 @@
             font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
         }
         .result-key:hover { text-decoration: underline; }
+        .copy-link {
+            background: none;
+            border: 1px solid #dfe1e6;
+            border-radius: 6px;
+            padding: 3px 8px;
+            font-size: 11px;
+            color: #6b778c;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .copy-link:hover { background: #f0f1f3; border-color: #c1c7d0; color: #42526e; }
+        .copy-link svg { width: 12px; height: 12px; fill: currentColor; flex-shrink: 0; }
+        .copy-link.copied { border-color: #36b37e; color: #006644; background: #e3fcef; }
         .result-summary {
             font-size: 14px;
             color: #172b4d;
@@ -340,6 +357,9 @@
         body.dark .empty-state .hint { color: #6e7681; }
         body.dark .kbd { background: #21262d; border-color: #30363d; color: #8b949e; }
         body.dark .badge { background: rgba(255,255,255,0.1); }
+        body.dark .copy-link { border-color: #30363d; color: #8b949e; }
+        body.dark .copy-link:hover { background: #21262d; border-color: #484f58; color: #e6edf3; }
+        body.dark .copy-link.copied { border-color: #238636; color: #3fb950; background: #0d2d1a; }
 
         /* Responsive */
         @media (max-width: 600px) {
@@ -551,6 +571,10 @@
                         <div class="result-top">
                             <a class="result-key" href="${r.link}" target="_blank">${r.key}</a>
                             <span class="status-badge ${statusClass}">${r.status}</span>
+                            <button class="copy-link" onclick="copyLink('${r.link}', this)" title="Copy link">
+                                <svg viewBox="0 0 16 16"><path d="M4.715 6.542L3.343 7.914a3 3 0 104.243 4.243l1.828-1.829A3 3 0 008.586 5.5L8 6.086a1 1 0 00-.154.199 2 2 0 01.861 3.337L6.88 11.45a2 2 0 11-2.83-2.83l.793-.792a4.018 4.018 0 01-.128-1.287z"/><path d="M11.285 9.458l1.372-1.372a3 3 0 00-4.243-4.243L6.586 5.671A3 3 0 007.414 10.5l.586-.586a1 1 0 00.154-.199 2 2 0 01-.861-3.337L9.12 4.55a2 2 0 112.83 2.83l-.793.792c.112.42.155.855.128 1.287z"/></svg>
+                                <span>Copy</span>
+                            </button>
                         </div>
                         <div class="result-summary">${escapeHtml(r.summary)}</div>
                         <div class="result-meta">
@@ -580,6 +604,17 @@
             const d = document.createElement('div');
             d.textContent = text;
             return d.innerHTML;
+        }
+
+        function copyLink(url, btn) {
+            navigator.clipboard.writeText(url).then(() => {
+                btn.classList.add('copied');
+                btn.querySelector('span').textContent = 'Copied!';
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    btn.querySelector('span').textContent = 'Copy';
+                }, 1500);
+            });
         }
 
         function show(id) { document.getElementById(id).classList.remove('hidden'); }
