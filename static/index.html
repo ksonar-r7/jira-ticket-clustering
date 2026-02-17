@@ -225,6 +225,7 @@
             overflow: hidden;
         }
         .score-fill {
+            display: block;
             height: 100%;
             border-radius: 3px;
             transition: width 0.5s ease-out;
@@ -436,8 +437,16 @@
 
         <div id="resultsCard" class="results-card hidden">
             <div class="results-header">
-                <h3 id="resultsTitle"></h3>
-                <span class="source-ticket" id="sourceInfo"></span>
+                <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
+                    <h3 id="resultsTitle"></h3>
+                    <span class="source-ticket" id="sourceInfo"></span>
+                </div>
+                <label style="margin-left:16px; font-size:12px; color:#6b778c; display:flex; align-items:center; gap:6px;">
+                    Project:
+                    <select id="projectFilter" onchange="filterResultsByProject()" style="font-size:12px; padding:2px 8px; border-radius:6px;">
+                        <option value="">All</option>
+                    </select>
+                </label>
             </div>
             <div id="resultsList"></div>
         </div>
@@ -537,7 +546,10 @@
             show('errorBox');
         }
 
+        // Store last results for filtering
+        let lastResults = [];
         function renderResults(ticket, results) {
+            lastResults = results;
             const domain = results.length > 0
                 ? results[0].link.replace(`/browse/${results[0].key}`, '')
                 : '';
@@ -547,22 +559,41 @@
             document.getElementById('sourceInfo').innerHTML =
                 `Source: <a href="${domain}/browse/${ticket}" target="_blank">${ticket}</a>`;
 
+            // Populate project filter dropdown
+            const projectSet = new Set(results.map(r => r.key.split('-')[0]));
+            const filter = document.getElementById('projectFilter');
+            filter.innerHTML = '<option value="">All</option>';
+            Array.from(projectSet).sort().forEach(p => {
+                filter.innerHTML += `<option value="${p}">${p}</option>`;
+            });
+            filter.value = '';
+
+            showFilteredResults(results);
+            show('resultsCard');
+        }
+
+        function filterResultsByProject() {
+            const filter = document.getElementById('projectFilter').value;
+            if (!filter) {
+                showFilteredResults(lastResults);
+            } else {
+                showFilteredResults(lastResults.filter(r => r.key.startsWith(filter + '-')));
+            }
+        }
+
+        function showFilteredResults(results) {
             const list = document.getElementById('resultsList');
             list.innerHTML = '';
-
             if (results.length === 0) {
                 list.innerHTML = '<div style="text-align:center;padding:40px;color:#8993a4"><p>No similar tickets found.</p></div>';
-                show('resultsCard');
                 return;
             }
-
             results.forEach((r, i) => {
                 const rank = i + 1;
                 const score = parseFloat(r.match_score);
                 const rankClass = rank <= 3 ? `rank-${rank}` : 'rank-other';
                 const statusClass = getStatusClass(r.status);
                 const scoreClass = score >= 70 ? 'high' : score >= 50 ? 'mid' : 'low';
-
                 const item = document.createElement('div');
                 item.className = 'result-item';
                 item.innerHTML = `
@@ -589,8 +620,6 @@
                 `;
                 list.appendChild(item);
             });
-
-            show('resultsCard');
         }
 
         function getStatusClass(status) {
