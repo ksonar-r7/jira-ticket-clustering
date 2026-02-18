@@ -217,6 +217,9 @@ def find_similar_issues(
     pool_size: int = Query(
         300, description="Candidate pool size (ignored when using vector store)"
     ),
+    same_project: bool = Query(
+        True, description="Only return results from the same project"
+    ),
 ):
     target_issue = jira_client.get_issue_details(issue_id)
     target_summary = target_issue.get("summary", "")
@@ -235,9 +238,11 @@ def find_similar_issues(
         parts.append(f"Comments: {target_comments}")
     target_full_context = ". ".join(p for p in parts if p)
 
+    print(f"Finding similar issues for {issue_id} with context: {target_full_context}")
+
     if "vector_store" in app_state:
         vector_store = app_state["vector_store"]
-        project = issue_id.split("-")[0]
+        project = issue_id.split("-")[0] if same_project else None
 
         results = vector_store.search(
             query_text=target_full_context,
@@ -245,6 +250,8 @@ def find_similar_issues(
             exclude_keys=[issue_id],
             project_filter=project,
         )
+
+        print(f"Vector store search results: {results}")
 
         return [
             {
@@ -375,6 +382,8 @@ async def jira_webhook(request: Request):
     if not issue_key:
         raise HTTPException(status_code=400, detail="Missing issue_key in request body")
 
+    print(f"Got request for issue_key = {issue_key}")
+
     # Get the ticket details
     target_issue = jira_client.get_issue_details(issue_key)
     target_summary = target_issue.get("summary", "")
@@ -389,70 +398,65 @@ async def jira_webhook(request: Request):
         parts.append(f"Comments: {target_comments}")
     target_full_context = ". ".join(p for p in parts if p)
 
+    print(f"Issue contents: {target_full_context}")
+
     # Find similar tickets
     if "vector_store" not in app_state:
         return {"status": "skipped", "reason": "Vector store not enabled"}
 
     vector_store = app_state["vector_store"]
-    project = issue_key.split("-")[0]
+    same_project_raw = body.get("same_project", True)
+    same_project = same_project_raw not in (False, "false", "False", 0)
+    project = issue_key.split("-")[0] if same_project else None
     results = vector_store.search(
         query_text=target_full_context,
         top_k=5,
         exclude_keys=[issue_key],
         project_filter=project,
     )
+    
+    print(f"Results: {results}")
 
     if not results:
         return {
             "status": "ok",
-            "comment_posted": False,
+            "matches": 0,
+            "comment": None,
             "reason": "No similar tickets found",
         }
 
-    # Only comment if the top match is reasonably similar (>60%)
-    if results[0]["score"] < 60:
-        return {"status": "ok", "comment_posted": False, "reason": "No strong matches"}
+    # Only include results with a reasonable similarity (>60%)
+    strong_matches = [r for r in results if r["score"] >= 60]
+    if not strong_matches:
+        return {"status": "ok", "matches": 0, "comment": None, "reason": "No strong matches"}
 
-    # Build the comment in Atlassian Document Format
+    # Build comment text for Jira Automation to post
     comment_lines = []
-    for r in results[:3]:
+    for r in strong_matches:
         comment_lines.append(
-            f"• [{r['key']}|https://{DOMAIN}/browse/{r['key']}] — {r['summary']} ({r['score']}% match)"
+            f"• [{r['key']}|https://{DOMAIN}/browse/{r['key']}] — {r['summary']}"
         )
 
     comment_text = (
         "*Potential duplicates detected:*\n\n"
         + "\n".join(comment_lines)
-        + "\n\n_Jira Duplicate Finder_"
     )
 
-    # Post the comment back to Jira
-    comment_url = f"{jira_client.base_url}/issue/{issue_key}/comment"
-    comment_body = {
-        "body": {
-            "type": "doc",
-            "version": 1,
-            "content": [
-                {
-                    "type": "paragraph",
-                    "content": [{"type": "text", "text": comment_text}],
-                }
-            ],
-        }
+    return {
+        "status": "ok",
+        "matches": len(strong_matches),
+        "comment": comment_text,
+        "results": [
+            {
+                "key": r["key"],
+                "link": f"https://{DOMAIN}/browse/{r['key']}",
+                "summary": r["summary"],
+                "status": r["status"],
+                "score": r["score"],
+            }
+            for r in strong_matches
+        ],
     }
-
-    try:
-        resp = requests.post(
-            comment_url,
-            json=comment_body,
-            auth=jira_client.auth,
-            headers={"Accept": "application/json", "Content-Type": "application/json"},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        return {"status": "ok", "comment_posted": True, "matches": len(results[:3])}
-    except requests.exceptions.RequestException as e:
-        return {"status": "error", "comment_posted": False, "error": str(e)}
 
 
 STATIC_DIR = Path(__file__).parent / "static"
