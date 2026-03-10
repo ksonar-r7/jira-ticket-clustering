@@ -594,6 +594,10 @@
                     <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
                     AI Summary
                 </h3>
+                <button class="copy-link" id="copySummaryBtn" onclick="copySummaryCard()" title="Copy summary">
+                    <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                    <span>Copy</span>
+                </button>
             </div>
             <div id="summaryBody" class="summary-body"></div>
         </div>
@@ -799,6 +803,21 @@
 
         function copyLink(url, btn) {
             navigator.clipboard.writeText(url).then(() => {
+                btn.classList.add('copied');
+                btn.querySelector('span').textContent = 'Copied!';
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    btn.querySelector('span').textContent = 'Copy';
+                }, 1500);
+            });
+        }
+
+        function copySummaryCard() {
+            const body = document.getElementById('summaryBody');
+            if (!body) return;
+            const text = body.innerText;
+            const btn = document.getElementById('copySummaryBtn');
+            navigator.clipboard.writeText(text).then(() => {
                 btn.classList.add('copied');
                 btn.querySelector('span').textContent = 'Copied!';
                 setTimeout(() => {

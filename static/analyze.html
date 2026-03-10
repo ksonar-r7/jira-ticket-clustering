@@ -176,6 +176,27 @@
             font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
         }
         .analysis-card-header .ticket-link:hover { text-decoration: underline; }
+        .copy-btn {
+            background: none;
+            border: 1px solid rgba(0,102,68,0.3);
+            border-radius: 6px;
+            padding: 5px 12px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #006644;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .copy-btn:hover { background: rgba(0,102,68,0.08); border-color: rgba(0,102,68,0.5); }
+        .copy-btn svg { width: 14px; height: 14px; fill: currentColor; flex-shrink: 0; }
+        .copy-btn.copied { border-color: #36b37e; color: #006644; background: rgba(54,179,126,0.1); }
+        body.dark .copy-btn { border-color: rgba(63,185,80,0.3); color: #3fb950; }
+        body.dark .copy-btn:hover { background: rgba(63,185,80,0.1); border-color: rgba(63,185,80,0.5); }
+        body.dark .copy-btn.copied { border-color: #238636; color: #3fb950; background: rgba(35,134,54,0.15); }
 
         /* Sections */
         .analysis-sections { padding: 0; }
@@ -439,7 +460,13 @@
                     <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.611 3.611 0 0112 15.6z"/></svg>
                     AI Ticket Analysis
                 </h3>
-                <a class="ticket-link" id="ticketLink" href="#" target="_blank"></a>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <a class="ticket-link" id="ticketLink" href="#" target="_blank"></a>
+                    <button class="copy-btn" id="copyAllBtn" onclick="copyAnalysis()" title="Copy entire analysis">
+                        <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                        <span>Copy All</span>
+                    </button>
+                </div>
             </div>
             <div class="analysis-sections" id="analysisSections"></div>
         </div>
@@ -582,6 +609,21 @@
                     <div class="section-body">${bodyHtml}</div>
                 </div>
             `;
+        }
+
+        function copyAnalysis() {
+            const sections = document.getElementById('analysisSections');
+            if (!sections) return;
+            const text = sections.innerText;
+            const btn = document.getElementById('copyAllBtn');
+            navigator.clipboard.writeText(text).then(() => {
+                btn.classList.add('copied');
+                btn.querySelector('span').textContent = 'Copied!';
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    btn.querySelector('span').textContent = 'Copy All';
+                }, 1500);
+            });
         }
 
         function showError(title, detail) {
