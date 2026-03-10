@@ -1,14 +1,34 @@
 """Vector store for Jira ticket embeddings using ChromaDB."""
 
 import os
+import platform
 from datetime import datetime
 
 import chromadb
+import torch
 from chromadb.api.types import Metadata
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 
 VECTOR_DB_PATH = os.getenv("VECTOR_DB_PATH", "./vector_store")
+
+
+def get_device() -> str:
+    """Detect the best available device for inference."""
+    if torch.backends.mps.is_available() and platform.system() == "Darwin":
+        return "mps"  # Apple Silicon GPU
+    elif torch.cuda.is_available():
+        return "cuda"  # NVIDIA GPU
+    return "cpu"
+
+
+def get_collection_name(model_name: str) -> str:
+    """Generate collection name based on model, replacing special chars."""
+    if model_name == "all-MiniLM-L6-v2":
+        return "jira_tickets"  # Default collection for backward compatibility
+    # Normalize model name: Qwen/Qwen3-Embedding-8B -> qwen3_embedding_8b
+    name = model_name.split("/")[-1].lower().replace("-", "_")
+    return f"jira_tickets_{name}"
 
 
 class TicketVectorStore:
@@ -19,16 +39,33 @@ class TicketVectorStore:
         model_name: str = "all-MiniLM-L6-v2",
         model: SentenceTransformer | None = None,
     ):
-        self.model = model or SentenceTransformer(model_name)
+        self.model_name = model_name
+        device = get_device()
+        print(f"Using device: {device}")
+        self.model = model or SentenceTransformer(model_name, device=device)
         self.client = chromadb.PersistentClient(
             path=VECTOR_DB_PATH, settings=Settings(anonymized_telemetry=False)
         )
+        collection_name = get_collection_name(model_name)
+        print(f"Using collection: {collection_name}")
         self.collection = self.client.get_or_create_collection(
-            name="jira_tickets", metadata={"hnsw:space": "cosine"}
+            name=collection_name, metadata={"hnsw:space": "cosine"}
         )
 
-    def _build_text(self, ticket: dict) -> str:
+    def _get_max_chars(self) -> int:
+        """Get max characters based on model context length. ~4 chars per token."""
+        model_lower = self.model_name.lower()
+        if "qwen3" in model_lower:
+            return 4000  # ~1K tokens, conservative for batching
+        elif "nomic" in model_lower:
+            return 4000  # ~1K tokens
+        return 2000  # MiniLM default
+
+    def _build_text(self, ticket: dict, max_chars: int | None = None) -> str:
         """Concatenates summary, description, and comments into searchable text."""
+        if max_chars is None:
+            max_chars = self._get_max_chars()
+        
         parts = [ticket["summary"]]
 
         if ticket.get("description"):
@@ -37,15 +74,21 @@ class TicketVectorStore:
         if ticket.get("comments"):
             parts.append(f"Comments: {ticket['comments']}")
 
-        return ". ".join(parts)
+        text = ". ".join(parts)
+        return text[:max_chars] if len(text) > max_chars else text
 
-    def add_tickets(self, tickets: list[dict], batch_size: int = 100):
+    def add_tickets(self, tickets: list[dict], batch_size: int = 10):
         """
         Add tickets to the vector store.
 
         Args:
             tickets: List of dicts with 'key', 'summary', 'description', 'status', 'comments'
+            batch_size: Number of tickets to encode at once (default: 10 for large models)
         """
+        import time
+        
+        start_time = time.time()
+        
         for i in range(0, len(tickets), batch_size):
             batch = tickets[i : i + batch_size]
 
@@ -70,7 +113,12 @@ class TicketVectorStore:
                 documents=texts,
             )
 
-            print(f"Indexed {min(i + batch_size, len(tickets))}/{len(tickets)} tickets")
+            indexed = min(i + batch_size, len(tickets))
+            elapsed = time.time() - start_time
+            rate = indexed / elapsed if elapsed > 0 else 0
+            remaining = len(tickets) - indexed
+            eta_min = remaining / rate / 60 if rate > 0 else 0
+            print(f"Indexed {indexed}/{len(tickets)} ({rate:.1f}/sec, ETA: {eta_min:.0f}min)")
 
     def search(
         self,
@@ -145,7 +193,8 @@ class TicketVectorStore:
 
     def delete_all(self):
         """Clears all tickets from the store."""
-        self.client.delete_collection("jira_tickets")
+        collection_name = get_collection_name(self.model_name)
+        self.client.delete_collection(collection_name)
         self.collection = self.client.get_or_create_collection(
-            name="jira_tickets", metadata={"hnsw:space": "cosine"}
+            name=collection_name, metadata={"hnsw:space": "cosine"}
         )

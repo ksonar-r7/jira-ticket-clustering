@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ticket Analyzer</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f7f8fa;
+            color: #1a1a2e;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #0052cc 0%, #0747a6 100%);
+            color: white;
+            padding: 0;
+        }
+        .header-inner {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 20px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header-left { display: flex; align-items: center; gap: 14px; }
+        .header-logo {
+            width: 36px; height: 36px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .header-logo svg { width: 20px; height: 20px; fill: white; }
+        .header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+        .header-right { display: flex; align-items: center; gap: 12px; }
+        .badge {
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(4px);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .health-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #57d9a3;
+            display: inline-block;
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+        .health-dot.offline { background: #ff5630; animation: none; }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Nav */
+        .nav {
+            background: rgba(0,0,0,0.15);
+        }
+        .nav-inner {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            gap: 0;
+        }
+        .nav a {
+            color: rgba(255,255,255,0.7);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 10px 16px;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .nav a:hover { color: white; background: rgba(255,255,255,0.05); }
+        .nav a.active { color: white; border-bottom-color: white; }
+
+        /* Container */
+        .container { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
+
+        /* Search */
+        .search-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            padding: 28px 32px;
+            margin-bottom: 20px;
+        }
+        .search-card h2 {
+            margin-bottom: 4px;
+            font-size: 17px;
+            font-weight: 600;
+        }
+        .search-card p { color: #6b778c; margin-bottom: 18px; font-size: 13px; }
+        .search-row { display: flex; gap: 10px; }
+        .search-row input {
+            flex: 1;
+            padding: 11px 16px;
+            border: 2px solid #e4e7eb;
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            letter-spacing: 0.5px;
+        }
+        .search-row input:focus {
+            border-color: #0052cc;
+            box-shadow: 0 0 0 3px rgba(0,82,204,0.1);
+        }
+        .search-row input::placeholder { color: #b3bac5; font-family: inherit; }
+        .analyze-btn {
+            padding: 11px 28px;
+            background: linear-gradient(135deg, #00875a 0%, #36b37e 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+            letter-spacing: 0.2px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .analyze-btn:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,135,90,0.4); }
+        .analyze-btn:active { transform: translateY(0); }
+        .analyze-btn:disabled { background: #c1c7d0; cursor: not-allowed; transform: none; box-shadow: none; }
+        .analyze-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+        /* Analysis Card */
+        .analysis-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            overflow: hidden;
+            animation: slideUp 0.3s ease-out;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .analysis-card-header {
+            padding: 14px 24px;
+            border-bottom: 1px solid #f0f1f3;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, #e3fcef 0%, #d4f7e6 100%);
+        }
+        .analysis-card-header h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #006644;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .analysis-card-header h3 svg { width: 16px; height: 16px; fill: #006644; }
+        .analysis-card-header .ticket-link {
+            font-size: 13px;
+            color: #0052cc;
+            text-decoration: none;
+            font-weight: 500;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+        }
+        .analysis-card-header .ticket-link:hover { text-decoration: underline; }
+
+        /* Sections */
+        .analysis-sections { padding: 0; }
+        .analysis-section {
+            padding: 24px;
+            border-bottom: 1px solid #f0f1f3;
+        }
+        .analysis-section:last-child { border-bottom: none; }
+        .section-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .section-icon {
+            width: 28px; height: 28px;
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+        .section-icon svg { width: 16px; height: 16px; fill: white; }
+        .section-icon.analysis-icon { background: linear-gradient(135deg, #0052cc, #2684ff); }
+        .section-icon.rootcause-icon { background: linear-gradient(135deg, #ff5630, #ff8f73); }
+        .section-icon.fix-icon { background: linear-gradient(135deg, #00875a, #57d9a3); }
+        .section-title {
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .section-title.analysis-title { color: #0052cc; }
+        .section-title.rootcause-title { color: #de350b; }
+        .section-title.fix-title { color: #006644; }
+        .section-body {
+            font-size: 14px;
+            line-height: 1.75;
+            color: #172b4d;
+        }
+        .section-body h1, .section-body h2, .section-body h3 {
+            margin-top: 12px;
+            margin-bottom: 6px;
+            color: #172b4d;
+        }
+        .section-body h3 { font-size: 15px; }
+        .section-body h2 { font-size: 16px; }
+        .section-body p { margin-bottom: 10px; }
+        .section-body ul, .section-body ol { padding-left: 24px; margin-bottom: 10px; }
+        .section-body li { margin-bottom: 4px; }
+        .section-body code {
+            background: #f4f5f7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+        }
+        .section-body pre {
+            background: #f4f5f7;
+            padding: 14px 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 10px;
+        }
+        .section-body pre code { background: none; padding: 0; }
+        .section-body strong { color: #0747a6; }
+        .section-empty {
+            color: #8993a4;
+            font-style: italic;
+            font-size: 13px;
+        }
+
+        /* States */
+        .state-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            text-align: center;
+            padding: 48px 32px;
+        }
+        .loading-text { color: #6b778c; font-size: 14px; margin-top: 16px; }
+        .loading-sub { color: #b3bac5; font-size: 12px; margin-top: 6px; }
+        .spinner {
+            width: 36px; height: 36px;
+            border: 3px solid #ecedf0;
+            border-top-color: #00875a;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .error-card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            text-align: center;
+            padding: 32px;
+        }
+        .error-card .error-icon {
+            width: 44px; height: 44px;
+            background: #ffebe6;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 14px;
+        }
+        .error-card .error-icon svg { width: 22px; height: 22px; fill: #de350b; }
+        .error-card .error-text { color: #bf2600; font-size: 14px; font-weight: 500; }
+        .error-card .error-detail { color: #6b778c; font-size: 13px; margin-top: 6px; }
+
+        .empty-state p { color: #8993a4; font-size: 14px; }
+        .empty-state .hint { font-size: 12px; color: #b3bac5; margin-top: 8px; }
+
+        .kbd {
+            background: #f0f1f3;
+            border: 1px solid #dfe1e6;
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-size: 11px;
+            font-family: inherit;
+            color: #6b778c;
+        }
+
+        .hidden { display: none; }
+
+        /* Theme toggle */
+        .theme-toggle {
+            background: rgba(255,255,255,0.15);
+            border: none;
+            border-radius: 8px;
+            width: 34px; height: 34px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s;
+            padding: 0;
+        }
+        .theme-toggle:hover { background: rgba(255,255,255,0.25); }
+        .theme-toggle svg { width: 18px; height: 18px; fill: white; }
+        .theme-toggle .icon-moon { display: none; }
+        body.dark .theme-toggle .icon-sun { display: none; }
+        body.dark .theme-toggle .icon-moon { display: block; }
+
+        /* Dark theme */
+        body.dark { background: #0d1117; color: #e6edf3; }
+        body.dark .header { background: linear-gradient(135deg, #1a3a6b 0%, #0d2240 100%); }
+        body.dark .nav { background: rgba(0,0,0,0.3); }
+        body.dark .nav a { color: rgba(255,255,255,0.5); }
+        body.dark .nav a:hover { color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.05); }
+        body.dark .nav a.active { color: white; border-bottom-color: white; }
+        body.dark .search-card,
+        body.dark .state-card { background: #161b22; box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2); }
+        body.dark .search-card h2 { color: #e6edf3; }
+        body.dark .search-card p { color: #8b949e; }
+        body.dark .search-row input { background: #0d1117; border-color: #30363d; color: #e6edf3; }
+        body.dark .search-row input:focus { border-color: #388bfd; box-shadow: 0 0 0 3px rgba(56,139,253,0.15); }
+        body.dark .search-row input::placeholder { color: #484f58; }
+        body.dark .analyze-btn { background: linear-gradient(135deg, #238636 0%, #2ea043 100%); }
+        body.dark .analyze-btn:disabled { background: #21262d; color: #484f58; }
+        body.dark .analysis-card { background: #161b22; box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2); }
+        body.dark .analysis-card-header { background: linear-gradient(135deg, #0d2d1a 0%, #122d1f 100%); border-color: #21262d; }
+        body.dark .analysis-card-header h3 { color: #3fb950; }
+        body.dark .analysis-card-header h3 svg { fill: #3fb950; }
+        body.dark .analysis-card-header .ticket-link { color: #58a6ff; }
+        body.dark .analysis-section { border-color: #21262d; }
+        body.dark .section-title.analysis-title { color: #58a6ff; }
+        body.dark .section-title.rootcause-title { color: #ff7b72; }
+        body.dark .section-title.fix-title { color: #3fb950; }
+        body.dark .section-body { color: #e6edf3; }
+        body.dark .section-body h1, body.dark .section-body h2, body.dark .section-body h3 { color: #e6edf3; }
+        body.dark .section-body code { background: #21262d; color: #e6edf3; }
+        body.dark .section-body pre { background: #0d1117; }
+        body.dark .section-body strong { color: #58a6ff; }
+        body.dark .section-empty { color: #6e7681; }
+        body.dark .loading-text { color: #8b949e; }
+        body.dark .loading-sub { color: #6e7681; }
+        body.dark .spinner { border-color: #21262d; border-top-color: #3fb950; }
+        body.dark .error-card { background: #161b22; box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2); }
+        body.dark .error-card .error-icon { background: #3d1a1a; }
+        body.dark .error-card .error-detail { color: #8b949e; }
+        body.dark .empty-state p { color: #8b949e; }
+        body.dark .empty-state .hint { color: #6e7681; }
+        body.dark .kbd { background: #21262d; border-color: #30363d; color: #8b949e; }
+        body.dark .badge { background: rgba(255,255,255,0.1); }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .header-inner { padding: 16px; }
+            .container { padding: 20px 16px; }
+            .search-card { padding: 20px; }
+            .search-row { flex-direction: column; }
+            .analyze-btn { width: 100%; justify-content: center; }
+            .analysis-section { padding: 18px 16px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-inner">
+            <div class="header-left">
+                <div class="header-logo">
+                    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                </div>
+                <h1>Jira Ticket Analyzer</h1>
+            </div>
+            <div class="header-right">
+                <span class="badge" id="ticketCount" title="Indexed tickets"></span>
+                <span class="health-dot" id="healthDot" title="Service status"></span>
+                <button class="theme-toggle" id="themeToggle" title="Toggle dark mode" onclick="toggleTheme()">
+                    <svg class="icon-sun" viewBox="0 0 24 24"><path d="M12 18a6 6 0 110-12 6 6 0 010 12zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.515 4.929l1.414-1.414L7.05 5.636 5.636 7.05 3.515 4.93zM16.95 18.364l1.414-1.414 2.121 2.121-1.414 1.414-2.121-2.121zM1 13h3v-2H1v2zm19 0h3v-2h-3v2zM4.929 20.485l-1.414-1.414 2.121-2.121 1.414 1.414-2.121 2.121zM18.364 7.05l-1.414-1.414 2.121-2.121 1.414 1.414L18.364 7.05z"/></svg>
+                    <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+                </button>
+            </div>
+        </div>
+        <div class="nav">
+            <div class="nav-inner">
+                <a href="/">Duplicate Finder</a>
+                <a href="/analyze" class="active">Ticket Analyzer</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="search-card">
+            <h2>Analyze a Ticket</h2>
+            <p>Enter a Jira issue key to get a detailed AI analysis with potential root cause and recommended fix.</p>
+            <div class="search-row">
+                <input type="text" id="ticketInput" placeholder="SI-12345 or paste a Jira link"
+                       autocomplete="off" spellcheck="false">
+                <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">
+                    <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.611 3.611 0 0112 15.6z"/></svg>
+                    Analyze
+                </button>
+            </div>
+            <div style="margin-top: 14px;">
+                <span style="font-size:12px;color:#b3bac5">Press <span class="kbd">Enter</span> to analyze</span>
+            </div>
+        </div>
+
+        <div id="emptyState" class="state-card">
+            <p class="empty-state">
+                <p>Enter a ticket ID above to get started</p>
+                <p class="hint">Get detailed analysis, root cause identification, and recommended fixes</p>
+            </p>
+        </div>
+
+        <div id="loading" class="state-card hidden">
+            <div class="spinner"></div>
+            <p class="loading-text">Analyzing ticket...</p>
+            <p class="loading-sub">AI is reviewing ticket details — this may take a few seconds</p>
+        </div>
+
+        <div id="errorBox" class="error-card hidden">
+            <div class="error-icon">
+                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            </div>
+            <div class="error-text" id="errorText"></div>
+            <div class="error-detail" id="errorDetail"></div>
+        </div>
+
+        <div id="analysisCard" class="analysis-card hidden">
+            <div class="analysis-card-header">
+                <h3>
+                    <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.611 3.611 0 0112 15.6z"/></svg>
+                    AI Ticket Analysis
+                </h3>
+                <a class="ticket-link" id="ticketLink" href="#" target="_blank"></a>
+            </div>
+            <div class="analysis-sections" id="analysisSections"></div>
+        </div>
+    </div>
+
+    <script>
+        // Restore saved theme preference
+        if (localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.body.classList.add('dark');
+        }
+
+        function toggleTheme() {
+            document.body.classList.toggle('dark');
+            localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+        }
+
+        const input = document.getElementById('ticketInput');
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') analyze(); });
+        input.focus();
+
+        // Check health on load
+        (async function checkHealth() {
+            try {
+                const resp = await fetch('/health');
+                const data = await resp.json();
+                const dot = document.getElementById('healthDot');
+                const count = document.getElementById('ticketCount');
+                if (data.status === 'healthy') {
+                    dot.classList.remove('offline');
+                    dot.title = 'Service healthy';
+                    if (data.indexed_tickets > 0) {
+                        count.textContent = data.indexed_tickets.toLocaleString() + ' tickets';
+                    }
+                } else {
+                    dot.classList.add('offline');
+                    dot.title = 'Service unhealthy';
+                }
+            } catch {
+                document.getElementById('healthDot').classList.add('offline');
+            }
+        })();
+
+        function parseTicketKey(raw) {
+            const s = raw.trim();
+            const urlMatch = s.match(/\/browse\/([A-Za-z][A-Za-z0-9]+-\d+)/);
+            if (urlMatch) return urlMatch[1].toUpperCase();
+            return s.toUpperCase();
+        }
+
+        async function analyze() {
+            const ticket = parseTicketKey(input.value);
+            if (!ticket) { input.focus(); return; }
+            if (!/^[A-Z][A-Z0-9]+-\d+$/.test(ticket)) {
+                showError('Invalid ticket format', 'Expected format: PROJECT-1234 or a Jira URL (e.g. https://…/browse/SI-12345)');
+                return;
+            }
+            input.value = ticket;
+
+            const btn = document.getElementById('analyzeBtn');
+            hide('emptyState'); hide('errorBox'); hide('analysisCard');
+            show('loading');
+            btn.disabled = true;
+            btn.innerHTML = `<div class="spinner" style="width:18px;height:18px;border-width:2px;margin:0;"></div> Analyzing...`;
+
+            try {
+                const resp = await fetch('/api/v1/issues/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ issue_id: ticket }),
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    if (resp.status === 404) {
+                        showError('Ticket not found', `${ticket} does not exist in Jira.`);
+                    } else if (resp.status === 503) {
+                        showError('LLM not available', err.detail || 'AI analysis is not configured on this server.');
+                    } else {
+                        showError('Analysis failed', err.detail || `Server returned ${resp.status}`);
+                    }
+                    return;
+                }
+                const data = await resp.json();
+                renderAnalysis(ticket, data);
+            } catch (err) {
+                showError('Connection error', err.message);
+            } finally {
+                hide('loading');
+                btn.disabled = false;
+                btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.611 3.611 0 0112 15.6z"/></svg> Analyze`;
+            }
+        }
+
+        function renderAnalysis(ticket, data) {
+            // Set ticket link (guess domain from health or use a generic one)
+            const linkEl = document.getElementById('ticketLink');
+            linkEl.textContent = ticket;
+            linkEl.href = '#'; // Will be updated if we can detect domain
+
+            const sections = document.getElementById('analysisSections');
+            sections.innerHTML = '';
+
+            // Detailed Analysis section
+            sections.innerHTML += buildSection(
+                'analysis-icon', 'analysis-title',
+                'Detailed Analysis',
+                '<svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zM6 20V4h5v7h7v9H6z"/></svg>',
+                data.analysis
+            );
+
+            // Root Cause section
+            sections.innerHTML += buildSection(
+                'rootcause-icon', 'rootcause-title',
+                'Potential Root Cause',
+                '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>',
+                data.root_cause
+            );
+
+            // Fix section
+            sections.innerHTML += buildSection(
+                'fix-icon', 'fix-title',
+                'Recommended Fix',
+                '<svg viewBox="0 0 24 24"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg>',
+                data.fix
+            );
+
+            show('analysisCard');
+        }
+
+        function buildSection(iconClass, titleClass, title, iconSvg, content) {
+            const bodyHtml = content
+                ? marked.parse(content)
+                : '<span class="section-empty">No information available for this section.</span>';
+            return `
+                <div class="analysis-section">
+                    <div class="section-label">
+                        <div class="section-icon ${iconClass}">${iconSvg}</div>
+                        <span class="section-title ${titleClass}">${title}</span>
+                    </div>
+                    <div class="section-body">${bodyHtml}</div>
+                </div>
+            `;
+        }
+
+        function showError(title, detail) {
+            hide('loading');
+            document.getElementById('errorText').textContent = title;
+            document.getElementById('errorDetail').textContent = detail || '';
+            show('errorBox');
+        }
+
+        function show(id) { document.getElementById(id).classList.remove('hidden'); }
+        function hide(id) { document.getElementById(id).classList.add('hidden'); }
+    </script>
+</body>
+</html>

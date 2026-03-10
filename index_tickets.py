@@ -16,7 +16,9 @@ Date range:
 """
 
 import argparse
+import json
 import os
+from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
@@ -25,6 +27,34 @@ from requests.auth import HTTPBasicAuth
 from vector_store import TicketVectorStore
 
 load_dotenv()
+
+TICKET_CACHE_DIR = Path(os.getenv("TICKET_CACHE_DIR", "./ticket_cache"))
+
+
+def get_cache_path(project: str) -> Path:
+    """Get the cache file path for a project."""
+    return TICKET_CACHE_DIR / f"{project.lower()}_tickets.json"
+
+
+def load_from_cache(project: str) -> list[dict] | None:
+    """Load tickets from cache file if it exists."""
+    cache_path = get_cache_path(project)
+    if cache_path.exists():
+        print(f"Loading tickets from cache: {cache_path}")
+        with open(cache_path) as f:
+            tickets = json.load(f)
+        print(f"  Loaded {len(tickets)} tickets from cache")
+        return tickets
+    return None
+
+
+def save_to_cache(project: str, tickets: list[dict]):
+    """Save tickets to cache file."""
+    TICKET_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path = get_cache_path(project)
+    with open(cache_path, "w") as f:
+        json.dump(tickets, f)
+    print(f"  Saved {len(tickets)} tickets to cache: {cache_path}")
 
 
 def parse_description(doc_node) -> str:
@@ -194,12 +224,28 @@ def main():
     parser.add_argument(
         "--clear", action="store_true", help="Clear existing index before indexing"
     )
+    parser.add_argument(
+        "--model",
+        default="all-MiniLM-L6-v2",
+        help="Embedding model to use (default: all-MiniLM-L6-v2). Examples: Qwen/Qwen3-Embedding-8B, Qwen/Qwen3-Embedding-0.6B",
+    )
+    parser.add_argument(
+        "--use-cache",
+        action="store_true",
+        help="Load tickets from local cache instead of fetching from Jira",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=64,
+        help="Batch size for embedding (default: 64). Use smaller values for large models.",
+    )
 
     args = parser.parse_args()
 
     # Initialize vector store
-    print("\nInitializing vector store...")
-    store = TicketVectorStore()
+    print(f"\nInitializing vector store with model: {args.model}")
+    store = TicketVectorStore(model_name=args.model)
 
     if args.clear:
         print("Clearing existing index...")
@@ -209,12 +255,28 @@ def main():
     stats = store.get_stats()
     print(f"Current index: {stats['total_tickets']} tickets")
 
-    tickets = fetch_all_tickets(
-        project=args.project,
-        max_tickets=args.max_tickets,
-        since=args.since,
-        until=args.until,
-    )
+    # Load tickets from cache or fetch from Jira
+    if args.use_cache:
+        tickets = load_from_cache(args.project)
+        if tickets is None:
+            print(f"No cache found for project {args.project}. Fetching from Jira...")
+            tickets = fetch_all_tickets(
+                project=args.project,
+                max_tickets=args.max_tickets,
+                since=args.since,
+                until=args.until,
+            )
+            if tickets:
+                save_to_cache(args.project, tickets)
+    else:
+        tickets = fetch_all_tickets(
+            project=args.project,
+            max_tickets=args.max_tickets,
+            since=args.since,
+            until=args.until,
+        )
+        if tickets:
+            save_to_cache(args.project, tickets)
 
     if not tickets:
         print("No tickets to index.")
@@ -233,7 +295,7 @@ def main():
         return
 
     print(f"Indexing {len(new_tickets)} new tickets...")
-    store.add_tickets(new_tickets)
+    store.add_tickets(new_tickets, batch_size=args.batch_size)
 
     # Final stats
     stats = store.get_stats()

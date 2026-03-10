@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jira Duplicate Finder</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -57,6 +58,29 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.4; }
         }
+
+        /* Nav */
+        .nav {
+            background: rgba(0,0,0,0.15);
+        }
+        .nav-inner {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            gap: 0;
+        }
+        .nav a {
+            color: rgba(255,255,255,0.7);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 10px 16px;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .nav a:hover { color: white; background: rgba(255,255,255,0.05); }
+        .nav a.active { color: white; border-bottom-color: white; }
 
         /* Container */
         .container { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
@@ -319,6 +343,10 @@
         /* Dark theme */
         body.dark { background: #0d1117; color: #e6edf3; }
         body.dark .header { background: linear-gradient(135deg, #1a3a6b 0%, #0d2240 100%); }
+        body.dark .nav { background: rgba(0,0,0,0.3); }
+        body.dark .nav a { color: rgba(255,255,255,0.5); }
+        body.dark .nav a:hover { color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.05); }
+        body.dark .nav a.active { color: white; border-bottom-color: white; }
         body.dark .search-card,
         body.dark .state-card { background: #161b22; box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2); }
         body.dark .search-card h2 { color: #e6edf3; }
@@ -362,6 +390,99 @@
         body.dark .copy-link:hover { background: #21262d; border-color: #484f58; color: #e6edf3; }
         body.dark .copy-link.copied { border-color: #238636; color: #3fb950; background: #0d2d1a; }
 
+        /* Summary */
+        .summary-btn {
+            padding: 8px 20px;
+            background: linear-gradient(135deg, #6554c0 0%, #8777d9 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        .summary-btn:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(101,84,192,0.4); }
+        .summary-btn:disabled { background: #c1c7d0; cursor: not-allowed; transform: none; box-shadow: none; }
+        .summary-btn svg { width: 16px; height: 16px; fill: currentColor; }
+        .summary-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            margin-top: 20px;
+            overflow: hidden;
+            animation: slideUp 0.3s ease-out;
+        }
+        .summary-card-header {
+            padding: 14px 24px;
+            border-bottom: 1px solid #f0f1f3;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, #f8f7ff 0%, #f0eeff 100%);
+        }
+        .summary-card-header h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #6554c0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .summary-card-header h3 svg { width: 16px; height: 16px; fill: #6554c0; }
+        .summary-body {
+            padding: 24px;
+            font-size: 14px;
+            line-height: 1.75;
+            color: #172b4d;
+        }
+        .summary-body h1, .summary-body h2, .summary-body h3 {
+            margin-top: 16px;
+            margin-bottom: 8px;
+            color: #172b4d;
+        }
+        .summary-body h3 { font-size: 15px; }
+        .summary-body h2 { font-size: 16px; }
+        .summary-body p { margin-bottom: 10px; }
+        .summary-body ul, .summary-body ol { padding-left: 24px; margin-bottom: 10px; }
+        .summary-body li { margin-bottom: 4px; }
+        .summary-body code {
+            background: #f4f5f7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+        }
+        .summary-body strong { color: #0747a6; }
+        .summary-loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 24px;
+            gap: 14px;
+        }
+        .summary-loading .spinner { border-top-color: #6554c0; }
+        .summary-loading-text { color: #6b778c; font-size: 13px; }
+
+        /* Dark-mode summary */
+        body.dark .summary-btn { background: linear-gradient(135deg, #6554c0 0%, #8777d9 100%); }
+        body.dark .summary-btn:disabled { background: #21262d; color: #484f58; }
+        body.dark .summary-card { background: #161b22; box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2); }
+        body.dark .summary-card-header { background: linear-gradient(135deg, #1e1532 0%, #241a3d 100%); border-color: #21262d; }
+        body.dark .summary-card-header h3 { color: #bc8cff; }
+        body.dark .summary-card-header h3 svg { fill: #bc8cff; }
+        body.dark .summary-body { color: #e6edf3; }
+        body.dark .summary-body h1, body.dark .summary-body h2, body.dark .summary-body h3 { color: #e6edf3; }
+        body.dark .summary-body code { background: #21262d; color: #e6edf3; }
+        body.dark .summary-body strong { color: #58a6ff; }
+        body.dark .summary-loading-text { color: #8b949e; }
+
         /* Responsive */
         @media (max-width: 600px) {
             .header-inner { padding: 16px; }
@@ -390,6 +511,12 @@
                     <svg class="icon-sun" viewBox="0 0 24 24"><path d="M12 18a6 6 0 110-12 6 6 0 010 12zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.515 4.929l1.414-1.414L7.05 5.636 5.636 7.05 3.515 4.93zM16.95 18.364l1.414-1.414 2.121 2.121-1.414 1.414-2.121-2.121zM1 13h3v-2H1v2zm19 0h3v-2h-3v2zM4.929 20.485l-1.414-1.414 2.121-2.121 1.414 1.414-2.121 2.121zM18.364 7.05l-1.414-1.414 2.121-2.121 1.414 1.414L18.364 7.05z"/></svg>
                     <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
                 </button>
+            </div>
+        </div>
+        <div class="nav">
+            <div class="nav-inner">
+                <a href="/" class="active">Duplicate Finder</a>
+                <a href="/analyze">Ticket Analyzer</a>
             </div>
         </div>
     </div>
@@ -445,14 +572,30 @@
                     <h3 id="resultsTitle"></h3>
                     <span class="source-ticket" id="sourceInfo"></span>
                 </div>
-                <label style="margin-left:16px; font-size:12px; color:#6b778c; display:flex; align-items:center; gap:6px;">
-                    Project:
-                    <select id="projectFilter" onchange="filterResultsByProject()" style="font-size:12px; padding:2px 8px; border-radius:6px;">
-                        <option value="">All</option>
-                    </select>
-                </label>
+                <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                    <label style="font-size:12px; color:#6b778c; display:flex; align-items:center; gap:6px;">
+                        Project:
+                        <select id="projectFilter" onchange="filterResultsByProject()" style="font-size:12px; padding:2px 8px; border-radius:6px;">
+                            <option value="">All</option>
+                        </select>
+                    </label>
+                    <button class="summary-btn" id="summarizeBtn" onclick="summarizeTickets()" title="Generate an AI summary of all matched tickets">
+                        <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+                        Summarize
+                    </button>
+                </div>
             </div>
             <div id="resultsList"></div>
+        </div>
+
+        <div id="summaryCard" class="summary-card hidden">
+            <div class="summary-card-header">
+                <h3>
+                    <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+                    AI Summary
+                </h3>
+            </div>
+            <div id="summaryBody" class="summary-body"></div>
         </div>
     </div>
 
@@ -482,6 +625,7 @@
                 if (data.status === 'healthy') {
                     dot.classList.remove('offline');
                     dot.title = 'Service healthy';
+                    window._llmAvailable = !!data.llm_available;
                     if (data.indexed_tickets > 0) {
                         count.textContent = data.indexed_tickets.toLocaleString() + ' tickets';
                     }
@@ -517,7 +661,7 @@
             const sameProject = document.getElementById('sameProject').checked;
             const btn = document.getElementById('searchBtn');
 
-            hide('emptyState'); hide('errorBox'); hide('resultsCard');
+            hide('emptyState'); hide('errorBox'); hide('resultsCard'); hide('summaryCard');
             show('loading');
             btn.disabled = true;
             btn.textContent = 'Searching...';
@@ -555,6 +699,19 @@
         let lastResults = [];
         function renderResults(ticket, results) {
             lastResults = results;
+            lastSearchedTicket = ticket;
+
+            // Hide previous summary
+            hide('summaryCard');
+
+            // Show/hide summarize button based on LLM availability
+            const sumBtn = document.getElementById('summarizeBtn');
+            if (window._llmAvailable && results.length > 0) {
+                sumBtn.style.display = 'flex';
+            } else {
+                sumBtn.style.display = 'none';
+            }
+
             const domain = results.length > 0
                 ? results[0].link.replace(`/browse/${results[0].key}`, '')
                 : '';
@@ -649,6 +806,56 @@
                     btn.querySelector('span').textContent = 'Copy';
                 }, 1500);
             });
+        }
+
+        let lastSearchedTicket = '';
+
+        async function summarizeTickets() {
+            if (!lastSearchedTicket || lastResults.length === 0) return;
+
+            const btn = document.getElementById('summarizeBtn');
+            const summaryCard = document.getElementById('summaryCard');
+            const summaryBody = document.getElementById('summaryBody');
+
+            btn.disabled = true;
+            btn.innerHTML = `<div class="spinner" style="width:16px;height:16px;border-width:2px;"></div> Summarizing...`;
+
+            // Show loading state in card
+            summaryBody.innerHTML = `
+                <div class="summary-loading">
+                    <div class="spinner"></div>
+                    <span class="summary-loading-text">Analysing tickets with AI... this may take a few seconds</span>
+                </div>`;
+            summaryCard.classList.remove('hidden');
+
+            try {
+                const resp = await fetch('/api/v1/issues/summarize', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        source_key: lastSearchedTicket,
+                        similar_keys: lastResults.map(r => r.key),
+                    }),
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    summaryBody.innerHTML = `<div style="color:#de350b;padding:8px 0;">${escapeHtml(err.detail || 'Summarization failed')}</div>`;
+                    return;
+                }
+
+                const data = await resp.json();
+                summaryBody.innerHTML = renderMarkdown(data.summary);
+            } catch (err) {
+                summaryBody.innerHTML = `<div style="color:#de350b;padding:8px 0;">Connection error: ${escapeHtml(err.message)}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg> Summarize`;
+            }
+        }
+
+        function renderMarkdown(md) {
+            return marked.parse(md);
         }
 
         function show(id) { document.getElementById(id).classList.remove('hidden'); }

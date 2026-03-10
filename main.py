@@ -2,8 +2,10 @@ import asyncio
 import os
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
+import boto3
 import requests
 import torch
 from dotenv import load_dotenv
@@ -14,11 +16,30 @@ from pydantic import BaseModel
 from requests.auth import HTTPBasicAuth
 from sentence_transformers import SentenceTransformer, util
 
+from index_tickets import fetch_all_tickets
+from vector_store import TicketVectorStore
+
 load_dotenv()
 
 app_state = {}
 VECTOR_STORE_ENABLED = os.getenv("VECTOR_STORE_ENABLED", "false").lower() == "true"
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
+
+BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-opus-4-6-v1")
+BEDROCK_REGION = os.getenv("BEDROCK_REGION", "us-east-1")
+bedrock_client = None
+try:
+    bedrock_client = boto3.client(
+        "bedrock-runtime",
+        region_name=BEDROCK_REGION,
+    )
+    bedrock_client.meta.region_name
+    print(
+        f"Bedrock client initialised (region={BEDROCK_REGION}, model={BEDROCK_MODEL_ID})"
+    )
+except Exception as e:
+    print(f"Warning: Bedrock client not available: {e}")
+    bedrock_client = None
 
 
 def verify_api_key(x_api_key: str = Header()):
@@ -38,8 +59,6 @@ async def lifespan(_: FastAPI):
 
     if VECTOR_STORE_ENABLED:
         try:
-            from vector_store import TicketVectorStore
-
             app_state["vector_store"] = TicketVectorStore(
                 model=app_state["semantic_model"]
             )
@@ -66,6 +85,11 @@ class SimilarIssueResponse(BaseModel):
     summary: str
     status: str
     match_score: str
+
+
+class SummarizeRequest(BaseModel):
+    source_key: str
+    similar_keys: list[str]
 
 
 def parse_jira_description(document_node) -> str:
@@ -275,6 +299,149 @@ def find_similar_issues(
     return ranked_results
 
 
+@app.post("/api/v1/issues/summarize")
+async def summarize_tickets(req: SummarizeRequest):
+    """Fetches full details of source + similar tickets and summarises them via an LLM."""
+    if not bedrock_client:
+        raise HTTPException(
+            status_code=503,
+            detail="LLM summarization is not configured. Ensure AWS credentials are available for Bedrock.",
+        )
+
+    all_keys = [req.source_key] + req.similar_keys
+    ticket_texts: list[str] = []
+
+    for key in all_keys:
+        try:
+            details = await asyncio.to_thread(jira_client.get_issue_details, key)
+            summary = details.get("summary", "")
+            description = parse_jira_description(details.get("description", {}))
+            comments = details.get("comments", "")
+
+            parts = [f"**{key}**: {summary}"]
+            if description:
+                parts.append(f"Description: {description}")
+            if comments:
+                parts.append(f"Comments: {comments}")
+            ticket_texts.append("\n".join(parts))
+        except HTTPException:
+            ticket_texts.append(f"**{key}**: (could not fetch details)")
+        except Exception as e:
+            print(f"Error fetching {key}: {e}")
+            ticket_texts.append(f"**{key}**: (error fetching details)")
+
+    tickets_block = "\n\n---\n\n".join(ticket_texts)
+
+    system_prompt = (
+        "You are a support-ticket analyst. The user will give you a set of related Jira tickets "
+        "(the first one is the source ticket, the rest are similar matches). "
+        "Produce a concise, well-structured summary covering:\n"
+        "1. The core issue / theme shared across the tickets.\n"
+        "2. Key details, root causes, or error messages mentioned.\n"
+        "3. Resolutions, workarounds, or action items found in comments.\n"
+        "4. Any other useful information hidden in the discussions.\n\n"
+        "Use markdown formatting. Be thorough but concise. "
+        "Reference ticket keys (e.g. SI-12345) when attributing information."
+    )
+
+    user_prompt = f"Here are the tickets to summarise:\n\n{tickets_block}"
+
+    try:
+        response = await asyncio.to_thread(
+            bedrock_client.converse,
+            modelId=BEDROCK_MODEL_ID,
+            system=[{"text": system_prompt}],
+            messages=[
+                {"role": "user", "content": [{"text": user_prompt}]},
+            ],
+            inferenceConfig={
+                "temperature": 0.3,
+                "maxTokens": 2048,
+            },
+        )
+        summary_text = response["output"]["message"]["content"][0]["text"]
+    except Exception as e:
+        print(f"LLM summarization failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Bedrock request failed: {str(e)}")
+
+    return {"summary": summary_text}
+
+
+class AnalyzeTicketRequest(BaseModel):
+    issue_id: str
+
+
+class AnalyzeTicketResponse(BaseModel):
+    analysis: str
+    root_cause: str
+    fix: str
+
+
+@app.post("/api/v1/issues/analyze", response_model=AnalyzeTicketResponse)
+async def analyze_ticket(req: AnalyzeTicketRequest):
+    """Analyzes a ticket and returns detailed analysis, root cause, and fix."""
+    if not bedrock_client:
+        raise HTTPException(
+            status_code=503,
+            detail="LLM analysis is not configured. Ensure AWS credentials are available for Bedrock.",
+        )
+    details = await asyncio.to_thread(jira_client.get_issue_details, req.issue_id)
+    summary = details.get("summary", "")
+    description = parse_jira_description(details.get("description", {}))
+    comments = details.get("comments", "")
+    ticket_text = f"**{req.issue_id}**: {summary}\nDescription: {description}\nComments: {comments}"
+
+    system_prompt = (
+        "You are a senior support engineer. The user will give you a Jira ticket. "
+        "Provide a detailed analysis of the issue, including potential root cause and recommended fix. "
+        "You MUST structure your response using EXACTLY these three section headers "
+        "(each on its own line, followed by a colon):\n\n"
+        "Detailed Analysis:\n"
+        "<your analysis here>\n\n"
+        "Root Cause:\n"
+        "<your root cause here>\n\n"
+        "Recommended Fix:\n"
+        "<your fix here>\n\n"
+        "Do NOT number the sections. Do NOT use markdown headers (##). "
+        "Just use the exact section names above followed by a colon. "
+        "Within each section, use markdown formatting for the content."
+    )
+    user_prompt = f"Here is the ticket to analyze:\n\n{ticket_text}"
+
+    try:
+        response = await asyncio.to_thread(
+            bedrock_client.converse,
+            modelId=BEDROCK_MODEL_ID,
+            system=[{"text": system_prompt}],
+            messages=[{"role": "user", "content": [{"text": user_prompt}]}],
+            inferenceConfig={"temperature": 0.3, "maxTokens": 2048},
+        )
+        output_text = response["output"]["message"]["content"][0]["text"]
+        print("[DEBUG] Raw LLM output for analysis:")
+        print(output_text)
+        analysis, root_cause, fix = "", "", ""
+
+        # Flexible regex: handles "## Detailed Analysis", "1. Detailed Analysis:",
+        # "**Detailed Analysis**", "Detailed Analysis:", etc.
+        match = re.search(
+            r"(?:#*\s*(?:\d+\.?\s*)?\**)?Detailed Analysis\**[:\s]*(.*?)"
+            r"(?:#*\s*(?:\d+\.?\s*)?\**)?(?:Potential\s+)?Root Cause\**[:\s]*(.*?)"
+            r"(?:#*\s*(?:\d+\.?\s*)?\**)?(?:Recommended\s+)?Fix\**[:\s]*(.*)",
+            output_text,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if match:
+            analysis = match.group(1).strip()
+            root_cause = match.group(2).strip()
+            fix = match.group(3).strip()
+        else:
+            analysis = output_text.strip()
+        return AnalyzeTicketResponse(analysis=analysis, root_cause=root_cause, fix=fix)
+    except Exception as e:
+        print(f"LLM analysis failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Bedrock request failed: {str(e)}")
+
+
 @app.get("/health")
 def health_check():
     status = {
@@ -283,6 +450,7 @@ def health_check():
         "vector_store": False,
         "indexed_tickets": 0,
         "reindex_running": app_state.get("reindex_running", False),
+        "llm_available": bedrock_client is not None,
     }
     if "vector_store" in app_state:
         stats = app_state["vector_store"].get_stats()
@@ -308,11 +476,7 @@ async def trigger_reindex(req: ReindexRequest):
     if app_state.get("reindex_running"):
         return {"status": "already_running"}
 
-    from index_tickets import fetch_all_tickets
-
     async def _run():
-        from datetime import datetime, timezone
-
         app_state["reindex_running"] = True
         app_state["reindex_status"] = {
             "status": "running",
@@ -414,7 +578,7 @@ async def jira_webhook(request: Request):
         exclude_keys=[issue_key],
         project_filter=project,
     )
-    
+
     print(f"Results: {results}")
 
     if not results:
@@ -428,7 +592,12 @@ async def jira_webhook(request: Request):
     # Only include results with a reasonable similarity (>60%)
     strong_matches = [r for r in results if r["score"] >= 60]
     if not strong_matches:
-        return {"status": "ok", "matches": 0, "comment": None, "reason": "No strong matches"}
+        return {
+            "status": "ok",
+            "matches": 0,
+            "comment": None,
+            "reason": "No strong matches",
+        }
 
     # Build comment text for Jira Automation to post
     comment_lines = []
@@ -437,10 +606,7 @@ async def jira_webhook(request: Request):
             f"• [{r['key']}|https://{DOMAIN}/browse/{r['key']}] — {r['summary']}"
         )
 
-    comment_text = (
-        "*Potential duplicates detected:*\n\n"
-        + "\n".join(comment_lines)
-    )
+    comment_text = "*Potential duplicates detected:*\n\n" + "\n".join(comment_lines)
 
     return {
         "status": "ok",
@@ -466,3 +632,7 @@ if STATIC_DIR.exists():
     @app.get("/")
     def serve_ui():
         return FileResponse(str(STATIC_DIR / "index.html"))
+
+    @app.get("/analyze")
+    def serve_analyze_ui():
+        return FileResponse(str(STATIC_DIR / "analyze.html"))
